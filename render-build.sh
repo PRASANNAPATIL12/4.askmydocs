@@ -13,3 +13,4 @@ echo "🔄 Setting up deployment server..."
 cp server-deploy.py server.py
 
 echo "✅ Build completed successfully!"
+echo "🚀 Server will start on PORT=${PORT:-8001}"
