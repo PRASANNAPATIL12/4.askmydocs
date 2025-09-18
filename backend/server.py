@@ -13,14 +13,14 @@ from typing import List, Optional
 import PyPDF2
 import io
 
-# Import Emergent integrations
+# Import Google Gemini API
 try:
-    from emergentintegrations.llm.chat import LlmChat, UserMessage
-    EMERGENT_AVAILABLE = True
-    print("✅ Emergent integrations loaded successfully")
+    import google.generativeai as genai
+    GEMINI_AVAILABLE = True
+    print("✅ Google Gemini loaded successfully")
 except ImportError as e:
-    EMERGENT_AVAILABLE = False
-    print(f"❌ Emergent integrations not available: {e}")
+    GEMINI_AVAILABLE = False
+    print(f"❌ Google Gemini not available: {e}")
     print("⚠️ Falling back to simple responses")
 
 # Import our lightweight modules
@@ -30,8 +30,8 @@ from lightweight_embeddings import embeddings_engine
 ROOT_DIR = Path(__file__).parent
 load_dotenv(ROOT_DIR / '.env')
 
-# Configure Emergent LLM
-EMERGENT_LLM_KEY = os.environ.get('EMERGENT_LLM_KEY')
+# Configure Google Gemini API
+GEMINI_API_KEY = os.environ.get('GEMINI_API_KEY')
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -105,21 +105,17 @@ def chunk_text(text: str, chunk_size: int = 500) -> List[str]:
     
     return chunks
 
-async def generate_answer_with_emergent_llm(question: str, context: str) -> str:
-    """Generate answer using Emergent Universal API"""
+async def generate_answer_with_gemini(question: str, context: str) -> str:
+    """Generate answer using Google Gemini API"""
     try:
-        if not EMERGENT_AVAILABLE:
-            return f"Based on the provided context, here's what I found: {context[:200]}... Please install emergentintegrations for full AI responses."
+        if not GEMINI_AVAILABLE:
+            return f"Based on the provided context, here's what I found: {context[:200]}... Please install google-generativeai for full AI responses."
         
-        # Create a unique session ID for this query
-        session_id = f"docubrain_{uuid.uuid4().hex[:8]}"
+        # Configure Gemini API
+        genai.configure(api_key=GEMINI_API_KEY)
         
-        # Initialize the chat with Emergent LLM
-        chat = LlmChat(
-            api_key=EMERGENT_LLM_KEY,
-            session_id=session_id,
-            system_message="You are a helpful assistant that answers questions based on provided document context. Use only the provided information and be concise."
-        ).with_model("openai", "gpt-4o-mini")  # Using default model as recommended
+        # Initialize the model
+        model = genai.GenerativeModel('gemini-pro')
         
         # Create the prompt
         prompt = f"""Based on the context below, answer the question concisely. Use only the provided information.
@@ -131,16 +127,13 @@ Question: {question}
 
 Answer:"""
         
-        # Create user message
-        user_message = UserMessage(text=prompt)
+        # Generate response
+        response = model.generate_content(prompt)
         
-        # Send message and get response
-        response = await chat.send_message(user_message)
-        
-        return response
+        return response.text
         
     except Exception as e:
-        print(f"Error generating response with Emergent LLM: {e}")
+        print(f"Error generating response with Gemini: {e}")
         # Fallback to context-based response
         return f"Based on the provided documents: {context[:300]}... (Error: {str(e)})"
 
@@ -355,8 +348,8 @@ async def query_documents(query: QueryRequest, user_id: str = Depends(get_curren
     # Create context for LLM
     context = "\n\n".join([chunk['content'] for chunk in top_chunks])
     
-    # Generate answer using Emergent Universal API
-    answer = await generate_answer_with_emergent_llm(query.question, context)
+    # Generate answer using Google Gemini API
+    answer = await generate_answer_with_gemini(query.question, context)
     
     # Prepare sources
     sources = [
