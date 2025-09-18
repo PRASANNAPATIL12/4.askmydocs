@@ -13,14 +13,14 @@ from typing import List, Optional
 import PyPDF2
 import io
 
-# Import OpenAI for deployment instead of emergentintegrations
+# Import Google Gemini for deployment instead of emergentintegrations
 try:
-    from openai import AsyncOpenAI
-    OPENAI_AVAILABLE = True
-    print("✅ OpenAI loaded successfully for deployment")
+    import google.generativeai as genai
+    GEMINI_AVAILABLE = True
+    print("✅ Google Gemini loaded successfully for deployment")
 except ImportError:
-    OPENAI_AVAILABLE = False
-    print("❌ OpenAI not available")
+    GEMINI_AVAILABLE = False
+    print("❌ Google Gemini not available")
 
 # Import our lightweight modules
 from database import db
@@ -29,15 +29,16 @@ from lightweight_embeddings import embeddings_engine
 ROOT_DIR = Path(__file__).parent
 load_dotenv(ROOT_DIR / '.env')
 
-# Configure OpenAI client for deployment
-openai_client = None
-if OPENAI_AVAILABLE:
-    openai_api_key = os.environ.get('OPENAI_API_KEY')
-    if openai_api_key:
-        openai_client = AsyncOpenAI(api_key=openai_api_key)
-        print("✅ OpenAI client initialized")
+# Configure Gemini client for deployment
+gemini_model = None
+if GEMINI_AVAILABLE:
+    gemini_api_key = os.environ.get('GEMINI_API_KEY')
+    if gemini_api_key:
+        genai.configure(api_key=gemini_api_key)
+        gemini_model = genai.GenerativeModel('gemini-1.5-flash')
+        print("✅ Gemini client initialized")
     else:
-        print("⚠️ OPENAI_API_KEY not found in environment")
+        print("⚠️ GEMINI_API_KEY not found in environment")
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -111,11 +112,11 @@ def chunk_text(text: str, chunk_size: int = 500) -> List[str]:
     
     return chunks
 
-async def generate_answer_with_openai(question: str, context: str) -> str:
-    """Generate answer using OpenAI API for deployment"""
+async def generate_answer_with_gemini(question: str, context: str) -> str:
+    """Generate answer using Google Gemini API for deployment"""
     try:
-        if not openai_client:
-            return f"Based on the provided context, here's what I found: {context[:200]}... Please configure OPENAI_API_KEY for full AI responses."
+        if not gemini_model:
+            return f"Based on the provided context, here's what I found: {context[:200]}... Please configure GEMINI_API_KEY for full AI responses."
         
         # Create the prompt
         prompt = f"""Based on the context below, answer the question concisely. Use only the provided information.
@@ -127,24 +128,16 @@ Question: {question}
 
 Answer:"""
         
-        # Send to OpenAI
-        response = await openai_client.chat.completions.create(
-            model="gpt-4o-mini",
-            messages=[
-                {
-                    "role": "system", 
-                    "content": "You are a helpful assistant that answers questions based on provided document context. Use only the provided information and be concise."
-                },
-                {"role": "user", "content": prompt}
-            ],
-            max_tokens=500,
-            temperature=0.3
-        )
+        # Send to Gemini
+        response = gemini_model.generate_content(prompt)
         
-        return response.choices[0].message.content
+        if response.text:
+            return response.text
+        else:
+            return f"Based on the provided documents: {context[:300]}... (No response generated)"
         
     except Exception as e:
-        print(f"Error generating response with OpenAI: {e}")
+        print(f"Error generating response with Gemini: {e}")
         # Fallback to context-based response
         return f"Based on the provided documents: {context[:300]}... (Error: {str(e)})"
 
@@ -359,8 +352,8 @@ async def query_documents(query: QueryRequest, user_id: str = Depends(get_curren
     # Create context for LLM
     context = "\n\n".join([chunk['content'] for chunk in top_chunks])
     
-    # Generate answer using OpenAI for deployment
-    answer = await generate_answer_with_openai(query.question, context)
+    # Generate answer using Gemini for deployment
+    answer = await generate_answer_with_gemini(query.question, context)
     
     # Prepare sources
     sources = [
